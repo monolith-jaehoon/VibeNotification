@@ -31,9 +31,9 @@ English | [中文](README.zh.md)
 
 ### Claude Code
 
-- Hooks you can use: `Stop` (on every reply), `SessionEnd` (when the session ends), `SubagentStop` (Task tool completes)
-- If what you want is "notify me when this reply is done", use `Stop`. That is the default and usually the only hook you need.
-- `SessionEnd` is optional and only useful if you explicitly want a notification when the entire Claude Code session exits. Many users do not need it because session exit is user-initiated.
+- Recommended hook: `Stop` (when each main reply completes).
+- If what you want is "notify me when this reply is done", use `Stop`. That is the default and the only recommended hook.
+- Do not attach the notifier command to `SessionEnd` or `SubagentStop`: VibeNotification ignores them by default to avoid duplicate alerts from session-exit, subagent, or tool-chain lifecycle events.
 - On macOS, VibeNotification now defaults to `sender` off in Claude Code hook contexts and terminal-hosted CLI contexts for more reliable banners. If you explicitly want host-app attribution/icon, set `VIBE_NOTIFICATION_SENDER_MODE=auto`.
 - If a notification appears only in Notification Center, check `System Settings > Notifications` for the effective app (`terminal-notifier` when sender is off, or the host app such as VS Code / Terminal when sender is auto/force). Make sure notifications are allowed, banner/alert style is enabled, and Focus is not suppressing them.
 - Edit `~/.claude/settings.json` and add a Stop hook:
@@ -86,54 +86,6 @@ English | [中文](README.zh.md)
   },
   "includeCoAuthoredBy": false,
   "outputStyle": "engineer-professional"
-}
-```
-
-- Session end only:
-
-```json
-{
-  "hooks": {
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "env VIBE_NOTIFICATION_SENDER_MODE=off python -m vibe_notification"
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-- Combine multiple hooks (Stop + SessionEnd):
-
-```json
-{
-  "hooks": {
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "env VIBE_NOTIFICATION_SENDER_MODE=off python -m vibe_notification"
-          }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "env VIBE_NOTIFICATION_SENDER_MODE=off python -m vibe_notification"
-          }
-        ]
-      }
-    ]
-  }
 }
 ```
 

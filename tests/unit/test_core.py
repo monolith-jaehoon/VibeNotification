@@ -158,3 +158,78 @@ def test_run_skips_codex_acknowledgement_turn_complete_payload(monkeypatch):
 
     notifier.notification_builder.build_notification_content.assert_not_called()
     notifier.notifier_manager.send_notifications.assert_not_called()
+
+
+def test_run_skips_claude_session_end_hook(monkeypatch):
+    """Claude SessionEnd 不是回复完成，默认结束检测应跳过。"""
+    monkeypatch.setenv("CLAUDE_HOOK_EVENT", "SessionEnd")
+
+    notifier = VibeNotifier(
+        NotificationConfig(
+            enable_sound=True,
+            enable_notification=True,
+            detect_conversation_end=True,
+        )
+    )
+    notifier.notification_builder = Mock(
+        build_notification_content=Mock(
+            return_value={
+                "title": "Demo",
+                "message": "Reply finished!",
+                "level": "INFO",
+                "subtitle": "IDE: Claude",
+            }
+        )
+    )
+    notifier.notifier_manager = Mock()
+
+    notifier.run()
+
+    notifier.notification_builder.build_notification_content.assert_not_called()
+    notifier.notifier_manager.send_notifications.assert_not_called()
+
+
+def test_run_skips_codex_completed_commentary_payload(monkeypatch):
+    """Codex 接收消息后的 completed/commentary 事件不应触发提示音。"""
+    event = {
+        "method": "turn/completed",
+        "client": "codex-app-server",
+        "data": {
+            "turn": {
+                "id": "turn-1",
+                "status": "completed",
+            },
+            "item": {
+                "agentMessage": {
+                    "id": "msg-1",
+                    "text": "好的，我先检查仓库结构。",
+                    "phase": "commentary",
+                }
+            },
+        },
+    }
+    monkeypatch.setattr(sys, "argv", ["python", "-m", "vibe_notification", json.dumps(event)])
+
+    notifier = VibeNotifier(
+        NotificationConfig(
+            enable_sound=True,
+            enable_notification=True,
+            detect_conversation_end=True,
+        )
+    )
+    notifier.notification_builder = Mock(
+        build_notification_content=Mock(
+            return_value={
+                "title": "Demo",
+                "message": "Reply finished!",
+                "level": "INFO",
+                "subtitle": "IDE: Codex",
+            }
+        )
+    )
+    notifier.notifier_manager = Mock()
+
+    notifier.run()
+
+    notifier.notification_builder.build_notification_content.assert_not_called()
+    notifier.notifier_manager.send_notifications.assert_not_called()

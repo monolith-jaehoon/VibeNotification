@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vibe-notification"
-version = "1.0.18"
+version = "1.0.19"
 description = "智能 AI 助手会话结束通知系统"
 readme = "README.md"
 authors = [

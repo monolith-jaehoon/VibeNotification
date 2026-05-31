@@ -31,9 +31,9 @@
 
 ### Claude Code
 
-- 可选钩子：`Stop`（每次回复）、`SessionEnd`（会话结束）、`SubagentStop`（Task 完成）
-- 如果你要的是“某个回复结束就通知”，直接用 `Stop`，这也是默认且通常唯一需要的钩子。
-- `SessionEnd` 是可选项，只有你明确想在整个 Claude Code 会话退出时再通知，才需要它。很多用户并不需要，因为会话退出本身通常是用户主动发起的。
+- 推荐钩子：`Stop`（每次主回复完成）。
+- 如果你要的是“某个回复结束就通知”，直接用 `Stop`，这也是默认且唯一推荐的钩子。
+- 不建议把通知命令挂到 `SessionEnd` 或 `SubagentStop`：VibeNotification 默认会忽略它们，避免会话退出、子代理完成或工具链事件造成重复提示。
 - 在 macOS 下，VibeNotification 现在会在 Claude Code hook 场景和终端宿主 CLI 场景默认关闭 `sender` 绑定，以提高横幅弹窗稳定性；如需沿用宿主 App 图标/归属，可设置 `VIBE_NOTIFICATION_SENDER_MODE=auto`。
 - 如果通知只进入通知中心，请到 `系统设置 > 通知` 检查当前生效的应用（`sender=off` 时通常是 `terminal-notifier`，`auto/force` 时通常是 VS Code / Terminal 等宿主 App），确认“允许通知”已打开、样式为横幅/提醒，且没有被专注模式压制。
 - 在 `~/.claude/settings.json` 添加 Stop 钩子：
@@ -86,54 +86,6 @@
   },
   "includeCoAuthoredBy": false,
   "outputStyle": "engineer-professional"
-}
-```
-
-- 仅在会话结束时触发：
-
-```json
-{
-  "hooks": {
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "env VIBE_NOTIFICATION_SENDER_MODE=off python -m vibe_notification"
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-- 同时启用 Stop 与 SessionEnd：
-
-```json
-{
-  "hooks": {
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "env VIBE_NOTIFICATION_SENDER_MODE=off python -m vibe_notification"
-          }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "env VIBE_NOTIFICATION_SENDER_MODE=off python -m vibe_notification"
-          }
-        ]
-      }
-    ]
-  }
 }
 ```
 

@@ -31,6 +31,32 @@ def test_detect_conversation_end_ignores_codex_user_prompt_submit_hook():
     assert detect_conversation_end(event) is False
 
 
+def test_detect_conversation_end_ignores_codex_session_end_event():
+    """SessionEnd/session-end 不是某次回复完成，不应触发通知。"""
+    event = {
+        "type": "session-end",
+        "client": "codex-tui",
+        "thread-id": "thread-1",
+        "conversation_end": True,
+    }
+
+    assert detect_conversation_end(event) is False
+
+
+def test_detect_conversation_end_ignores_nested_codex_session_end_event():
+    """嵌套 session-end 即使带 conversation_end 标记也不应触发。"""
+    event = {
+        "client": "codex-tui",
+        "thread-id": "thread-1",
+        "data": {
+            "type": "session-end",
+            "conversation_end": True,
+        },
+    }
+
+    assert detect_conversation_end(event) is False
+
+
 def test_detect_conversation_end_ignores_codex_stop_hook_payload():
     """Codex Stop hook 输入不是 notify 事件，不应直接通知。"""
     event = {
@@ -275,6 +301,29 @@ def test_detect_conversation_end_ignores_codex_app_server_non_terminal_turn_comp
                 "agentMessage": {
                     "id": "msg-1",
                     "text": "I've received your instructions and will inspect the repository first.",
+                    "phase": "commentary",
+                }
+            },
+        },
+    }
+
+    assert detect_conversation_end(event) is False
+
+
+def test_detect_conversation_end_ignores_completed_commentary_without_final_answer():
+    """completed 状态若只携带 commentary，仍不是最终答复。"""
+    event = {
+        "method": "turn/completed",
+        "client": "codex-app-server",
+        "data": {
+            "turn": {
+                "id": "turn-1",
+                "status": "completed",
+            },
+            "item": {
+                "agentMessage": {
+                    "id": "msg-1",
+                    "text": "好的，我先检查仓库结构。",
                     "phase": "commentary",
                 }
             },

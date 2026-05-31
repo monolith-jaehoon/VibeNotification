@@ -27,26 +27,24 @@ class ClaudeCodeParser(BaseParser):
 
     def _detect_conversation_end(self, payload: Dict[str, Any]) -> bool:
         """Claude 专用的会话结束判断，不再依赖 Codex 感知逻辑。"""
-        for key in ("is_last_turn", "conversation_end", "conversation_finished", "final", "closed"):
-            if key in payload and bool(payload.get(key)):
-                return True
-
         event_type = payload.get("type") or payload.get("event")
         if isinstance(event_type, str):
             normalized = event_type.replace("_", "-").strip().lower()
-            if normalized in {"agent-turn-complete", "turn-complete", "session-end"}:
+            if normalized == "session-end":
+                return False
+            if normalized in {"agent-turn-complete", "turn-complete"}:
                 return True
             if "turn" in normalized and "complete" in normalized:
+                return True
+
+        for key in ("is_last_turn", "conversation_end", "conversation_finished", "final", "closed"):
+            if key in payload and bool(payload.get(key)):
                 return True
 
         for key in ("finish_reason", "stop_reason", "stopReason", "reason"):
             reason = payload.get(key)
             if isinstance(reason, str) and reason.strip().lower() in {"stop", "end", "complete", "completed", "done"}:
                 return True
-
-        tool_name = payload.get("toolName") or payload.get("tool_name")
-        if isinstance(tool_name, str) and tool_name.strip():
-            return True
 
         state = payload.get("conversation_state") or payload.get("state")
         if isinstance(state, str) and state.strip().lower() in {"finished", "ended", "closed", "complete"}:
@@ -93,13 +91,13 @@ class ClaudeCodeParser(BaseParser):
 
         if hook_event == "SubagentStop":
             return NotificationEvent(
-                type="agent-turn-complete",
+                type="subagent-stop",
                 agent="claude-code-subagent",
                 message="子代理完成任务",
-                summary="Claude Code 子代理已完成",
+                summary="Claude Code 子代理已完成（忽略通知）",
                 timestamp=datetime.now().isoformat(),
-                conversation_end=True,
-                is_last_turn=True,
+                conversation_end=False,
+                is_last_turn=False,
                 metadata={"event": "SubagentStop", "source": "hook", "stdin": stdin_json or {}}
             )
 
@@ -108,10 +106,10 @@ class ClaudeCodeParser(BaseParser):
                 type="session-end",
                 agent="claude-code",
                 message="Claude 会话结束",
-                summary="Claude Code 会话已结束",
+                summary="Claude Code 会话已结束（忽略通知）",
                 timestamp=datetime.now().isoformat(),
-                conversation_end=True,
-                is_last_turn=True,
+                conversation_end=False,
+                is_last_turn=False,
                 metadata={"event": "SessionEnd", "source": "hook", "stdin": stdin_json or {}}
             )
 

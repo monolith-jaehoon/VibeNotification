@@ -48,7 +48,7 @@ def _analyze_claude_settings(path: Path) -> Iterable[DoctorFinding]:
             level="WARN",
             scope="claude",
             summary=f"未发现可解析的 Claude Code 配置: {path}",
-            recommendation="如需 Claude 会话结束通知，请在 ~/.claude/settings.json 配置 SessionEnd hook。",
+            recommendation="如需“回复结束就通知”，请在 ~/.claude/settings.json 配置 Stop hook。",
         )
         return
 
@@ -71,16 +71,17 @@ def _analyze_claude_settings(path: Path) -> Iterable[DoctorFinding]:
 
     if has_session_end:
         yield DoctorFinding(
-            level="OK",
+            level="WARN",
             scope="claude",
-            summary="Claude Code 已配置 SessionEnd hook，可在会话真正结束时触发通知。",
+            summary="Claude Code 已配置 SessionEnd hook；VibeNotification 默认会忽略它。",
+            recommendation="如果你只关心“某次回复结束”，建议移除 SessionEnd，只保留 Stop hook，避免多余调用。",
         )
     else:
         yield DoctorFinding(
             level="INFO",
             scope="claude",
             summary="Claude Code 未配置 SessionEnd hook（可选）。",
-            recommendation="如果你只关心“某次回复结束”，当前的 Stop hook 就够了；只有明确需要会话真正结束时才考虑 SessionEnd。",
+            recommendation="如果你只关心“某次回复结束”，当前的 Stop hook 就够了；无需配置 SessionEnd。",
         )
 
 

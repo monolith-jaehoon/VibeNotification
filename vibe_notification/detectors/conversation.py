@@ -317,6 +317,11 @@ def _collect_codex_phases(event: Dict[str, Any]) -> set[str]:
     return phases
 
 
+def _has_codex_terminal_phase(event: Dict[str, Any]) -> bool:
+    """判断负载是否明确包含最终答复 phase。"""
+    return any(phase in CODEX_TERMINAL_PHASES for phase in _collect_codex_phases(event))
+
+
 def _collect_codex_statuses(event: Dict[str, Any]) -> set[str]:
     """收集 Codex turn/session status。"""
     statuses = set()
@@ -345,14 +350,14 @@ def _codex_structured_terminal_signal(event: Dict[str, Any]) -> bool | None:
     if any(status in CODEX_NON_TERMINAL_STATUSES for status in statuses):
         return False
 
-    if any(status in CODEX_TERMINAL_STATUSES for status in statuses):
-        return True
-
     if any(phase in CODEX_TERMINAL_PHASES for phase in phases):
         return True
 
     if any(phase in CODEX_NON_TERMINAL_PHASES for phase in phases):
         return False
+
+    if any(status in CODEX_TERMINAL_STATUSES for status in statuses):
+        return True
 
     return None
 
@@ -367,7 +372,7 @@ def _detect_codex_conversation_end(event: Dict[str, Any]) -> bool:
     structured_signal = _codex_structured_terminal_signal(event)
 
     if event_type == "session-end":
-        return True
+        return False
 
     for key in ("is_last_turn", "conversation_end", "conversation_finished", "final", "closed"):
         if key in event and bool(event.get(key)):
@@ -378,14 +383,20 @@ def _detect_codex_conversation_end(event: Dict[str, Any]) -> bool:
     if event_type in CODEX_NOTIFY_EVENT_TYPES or method in CODEX_APP_SERVER_METHODS:
         if structured_signal is False:
             return False
-        if structured_signal is True:
+        if _has_codex_terminal_phase(event):
             return True
+        if structured_signal is True:
+            return _codex_turn_complete_has_terminal_content(event)
         return _codex_turn_complete_has_terminal_content(event)
 
     for container_key in ("payload", "metadata", "data", "details"):
         sub = event.get(container_key)
         if not isinstance(sub, dict):
             continue
+
+        nested_type = _normalize_event_name(sub.get("type") or sub.get("event"))
+        if nested_type == "session-end":
+            return False
 
         for key in ("conversation_end", "conversation_finished", "is_last_turn", "final", "closed"):
             if key in sub and bool(sub.get(key)):
@@ -394,16 +405,14 @@ def _detect_codex_conversation_end(event: Dict[str, Any]) -> bool:
                     return False
                 return True
 
-        nested_type = _normalize_event_name(sub.get("type") or sub.get("event"))
-        if nested_type == "session-end":
-            return True
-
         if nested_type in CODEX_NOTIFY_EVENT_TYPES:
             nested_signal = _codex_structured_terminal_signal(sub)
             if nested_signal is False:
                 return False
-            if nested_signal is True:
+            if _has_codex_terminal_phase(sub):
                 return True
+            if nested_signal is True:
+                return _codex_turn_complete_has_terminal_content(sub)
             return _codex_turn_complete_has_terminal_content(sub)
 
         nested_method = _normalize_event_name(sub.get("method"))
@@ -411,8 +420,10 @@ def _detect_codex_conversation_end(event: Dict[str, Any]) -> bool:
             nested_signal = _codex_structured_terminal_signal(sub)
             if nested_signal is False:
                 return False
-            if nested_signal is True:
+            if _has_codex_terminal_phase(sub):
                 return True
+            if nested_signal is True:
+                return _codex_turn_complete_has_terminal_content(sub)
             return _codex_turn_complete_has_terminal_content(sub)
 
     return False
