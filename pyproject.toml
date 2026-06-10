@@ -10,7 +10,7 @@ readme = "README.md"
 authors = [
     {name = "huangwb8", email = "hwb2012@qq.com"}
 ]
-license = "MIT"
+license = {text = "MIT"}
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -29,6 +29,20 @@ classifiers = [
 keywords = ["claude", "codex", "notification", "ai", "assistant"]
 dependencies = []
 requires-python = ">=3.7"
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0,<8",
+    "pytest-cov>=4.0,<5",
+]
+dev = [
+    "pytest>=7.0,<8",
+    "pytest-cov>=4.0,<5",
+    "black>=23.1,<23.4",
+    "isort>=5.10,<5.12",
+    "flake8>=5.0,<6",
+    "mypy>=1.0,<1.5",
+]
 
 [project.urls]
 Homepage = "https://github.com/huangwb8/VibeNotification"
