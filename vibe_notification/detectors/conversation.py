@@ -4,6 +4,8 @@
 检测会话是否结束
 """
 
+from __future__ import annotations
+
 import re
 from typing import Any, Dict
 

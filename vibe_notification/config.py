@@ -4,6 +4,8 @@
 负责加载、保存和管理配置
 """
 
+from __future__ import annotations
+
 import json
 import os
 from pathlib import Path

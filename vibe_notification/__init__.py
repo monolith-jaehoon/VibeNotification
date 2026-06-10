@@ -9,6 +9,8 @@ VibeNotification - 为 Claude Code 和 Codex 提供智能会话结束通知
 5. 详细的日志记录
 """
 
+from __future__ import annotations
+
 from pathlib import Path
 import re
 
