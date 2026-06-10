@@ -71,12 +71,12 @@ git push origin feature/your-feature-name
 
 ```bash
 # 格式化代码
-black src/ tests/
-isort src/ tests/
+black vibe_notification/ tests/
+isort vibe_notification/ tests/
 
 # 检查代码质量
-flake8 src/ tests/
-mypy src/
+flake8 vibe_notification/ tests/
+mypy vibe_notification/
 ```
 
 ### 提交信息格式
@@ -109,7 +109,7 @@ docs: 更新安装说明
 pytest tests/
 
 # 带覆盖率
-pytest --cov=src tests/
+pytest --cov=vibe_notification tests/
 ```
 
 ## 🐛 报告问题
@@ -138,14 +138,17 @@ pytest --cov=src tests/
 
 ```
 VibeNotification/
-├── src/                    # 源代码
-│   └── vibe_notification.py
+├── vibe_notification/      # 核心包
+│   ├── cli.py              # CLI 入口
+│   ├── core.py             # 主协调器
+│   ├── parsers/            # Claude Code / Codex 事件解析
+│   ├── notifiers/          # 声音和系统通知器
+│   └── adapters.py         # 跨平台命令适配
 ├── tests/                  # 测试代码
 ├── docs/                   # 文档
 ├── examples/               # 示例代码
-├── .github/               # GitHub 配置
-│   └── workflows/         # CI/CD 工作流
-└── 配置文件
+├── pyproject.toml          # 构建、依赖和工具元数据
+└── config.example.json     # 配置示例
 ```
 
 ## 🔧 开发工具

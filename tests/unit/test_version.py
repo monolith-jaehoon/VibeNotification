@@ -1,4 +1,7 @@
-from importlib import metadata
+try:
+    from importlib import metadata
+except ImportError:  # pragma: no cover - Python 3.7 compatibility
+    import importlib_metadata as metadata
 
 import vibe_notification
 

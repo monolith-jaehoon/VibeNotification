@@ -102,7 +102,6 @@ python -m vibe_notification --test
 
 ## 配置文件位置
 
-配置会自动保存到用户配置目录：
-- macOS: `~/Library/Application Support/VibeNotification/config.json`
-- Linux: `~/.config/VibeNotification/config.json`
-- Windows: `%APPDATA%\VibeNotification\config.json`
+配置会自动保存到用户主目录下的 `.config/vibe-notification` 目录：
+- macOS/Linux: `~/.config/vibe-notification/config.json`
+- Windows: `%USERPROFILE%\.config\vibe-notification\config.json`

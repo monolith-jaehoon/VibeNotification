@@ -9,9 +9,15 @@ VibeNotification - 为 Claude Code 和 Codex 提供智能会话结束通知
 5. 详细的日志记录
 """
 
-from importlib import metadata
+from __future__ import annotations
+
 from pathlib import Path
 import re
+
+try:
+    from importlib import metadata
+except ImportError:  # pragma: no cover - Python 3.7 compatibility
+    import importlib_metadata as metadata
 
 
 def _read_pyproject_version() -> str | None:

@@ -9,7 +9,9 @@ Codex 防抖后台 Worker
 import argparse
 import json
 import logging
+import os
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -22,14 +24,35 @@ from vibe_notification.models import NotificationEvent
 from vibe_notification.core import VibeNotifier
 
 
+def _user_temp_root() -> Path:
+    if hasattr(os, "getuid"):
+        token = str(os.getuid())
+    else:
+        value = os.environ.get("USERNAME") or os.environ.get("USER") or "default"
+        token = "".join(c if c.isalnum() or c in "-_." else "_" for c in value) or "default"
+
+    return Path(tempfile.gettempdir()) / f"vibe-notification-{token}"
+
+
+def _worker_log_path() -> Path:
+    return _user_temp_root() / "debounce-worker.log"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="VibeNotification debounce worker")
     parser.add_argument("--state-path", required=True, help="会话状态文件路径")
     parser.add_argument("--cooldown", required=True, type=int, help="冷却期（秒）")
+    parser.add_argument(
+        "--expected-mtime-ns",
+        required=True,
+        type=int,
+        help="worker 启动时观察到的状态文件 mtime_ns",
+    )
     args = parser.parse_args()
 
     state_path = Path(args.state_path)
     cooldown = args.cooldown
+    expected_mtime_ns = args.expected_mtime_ns
 
     # 等待冷却期
     time.sleep(cooldown)
@@ -39,13 +62,19 @@ def main() -> int:
         return 0
 
     try:
+        current_mtime_ns = state_path.stat().st_mtime_ns
+    except OSError:
+        return 0
+
+    if current_mtime_ns != expected_mtime_ns:
+        return 0
+
+    try:
         with state_path.open("r", encoding="utf-8") as fp:
             state = json.load(fp)
     except (json.JSONDecodeError, OSError):
         return 1
 
-    # 检查文件是否在冷却期内被更新（即有新事件到来）
-    updated_at = state.get("updated_at", "")
     event_dict = state.get("event", {})
 
     if not event_dict:
@@ -66,10 +95,10 @@ def main() -> int:
         notifier.process_event(event)
     except Exception as exc:
         # worker 在后台运行，只能写日志
+        log_path = _worker_log_path()
+        log_path.parent.mkdir(parents=True, exist_ok=True)
         logging.basicConfig(
-            filename=str(
-                Path.home() / ".config" / "vibe-notification" / "debounce-worker.log"
-            ),
+            filename=str(log_path),
             level=logging.DEBUG,
         )
         logging.getLogger(__name__).error("Worker 发送通知失败: %s", exc, exc_info=True)
@@ -77,7 +106,9 @@ def main() -> int:
 
     # 发送完成后清理状态文件
     try:
-        state_path.unlink(missing_ok=True)
+        state_path.unlink()
+    except FileNotFoundError:
+        pass
     except OSError:
         pass
 

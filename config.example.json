@@ -4,7 +4,7 @@
   "enable_sound": true,
   "enable_notification": true,
   "notification_timeout": 10000,
-  "sound_type": "default",
+  "sound_type": "Glass",
   "sound_volume": 0.1,
   "log_level": "INFO",
   "detect_conversation_end": true,
