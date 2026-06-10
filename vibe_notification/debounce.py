@@ -11,6 +11,7 @@ import logging
 import os
 import subprocess
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -22,8 +23,22 @@ logger = logging.getLogger(__name__)
 # 默认冷却期（秒）：默认关闭，只有显式设置环境变量时才启用防抖
 DEFAULT_COOLDOWN_SECONDS = 0
 
+
+def _state_dir_user_token() -> str:
+    if hasattr(os, "getuid"):
+        return str(os.getuid())
+
+    value = os.environ.get("USERNAME") or os.environ.get("USER") or "default"
+    safe_value = "".join(c if c.isalnum() or c in "-_." else "_" for c in value)
+    return safe_value or "default"
+
+
 # 会话状态目录
-SESSION_STATE_DIR = Path.home() / ".config" / "vibe-notification" / "sessions"
+SESSION_STATE_DIR = (
+    Path(tempfile.gettempdir())
+    / f"vibe-notification-{_state_dir_user_token()}"
+    / "sessions"
+)
 
 
 def _session_file_path(event_data: Dict[str, Any]) -> Optional[Path]:
@@ -102,12 +117,19 @@ def spawn_debounce_worker(state_path: Path, cooldown: Optional[int] = None) -> N
     if cooldown is None:
         cooldown = int(os.environ.get("VIBE_DEBOUNCE_COOLDOWN", DEFAULT_COOLDOWN_SECONDS))
 
+    try:
+        expected_mtime_ns = state_path.stat().st_mtime_ns
+    except OSError as exc:
+        logger.warning("无法读取防抖状态文件，将跳过 worker 启动: %s", exc)
+        return
+
     worker_script = Path(__file__).parent / "_debounce_worker.py"
     cmd = [
         sys.executable,
         str(worker_script),
         "--state-path", str(state_path),
         "--cooldown", str(cooldown),
+        "--expected-mtime-ns", str(expected_mtime_ns),
     ]
 
     try:

@@ -1,15 +1,18 @@
 """测试 debounce 防抖模块"""
 
 import json
+import os
 import sys
-from pathlib import Path
+import tempfile
 from unittest.mock import patch, MagicMock
 
 from vibe_notification.debounce import (
     should_debounce,
     write_session_state,
+    spawn_debounce_worker,
     handle_codex_turn_event,
     DEFAULT_COOLDOWN_SECONDS,
+    SESSION_STATE_DIR,
 )
 from vibe_notification.models import NotificationEvent
 
@@ -86,6 +89,9 @@ class TestShouldDebounce:
 class TestWriteSessionState:
     """会话状态文件写入"""
 
+    def test_default_state_dir_uses_tempdir(self):
+        assert str(SESSION_STATE_DIR).startswith(tempfile.gettempdir())
+
     def test_writes_state_file(self, tmp_path):
         event_data = _make_turn_event()
         event = _make_parsed_event()
@@ -126,6 +132,99 @@ class TestWriteSessionState:
 
         state = json.loads(state_path.read_text(encoding="utf-8"))
         assert state["cooldown"] == 15
+
+
+class TestSpawnDebounceWorker:
+    """后台 worker 启动参数"""
+
+    def test_passes_expected_state_mtime_to_worker(self, tmp_path):
+        state_path = tmp_path / "state.json"
+        state_path.write_text("{}", encoding="utf-8")
+        expected_mtime_ns = state_path.stat().st_mtime_ns
+
+        with patch("vibe_notification.debounce.subprocess.Popen") as mock_popen:
+            spawn_debounce_worker(state_path, cooldown=3)
+
+        mock_popen.assert_called_once()
+        command = mock_popen.call_args[0][0]
+        assert "--expected-mtime-ns" in command
+        assert str(expected_mtime_ns) in command
+
+
+class TestDebounceWorker:
+    """后台 worker 发送前的状态文件新鲜度检查"""
+
+    def _write_worker_state(self, state_path, message="Done and verified."):
+        event = _make_parsed_event(message=message, summary=message)
+        state = {
+            "updated_at": "2026-04-06T12:00:00",
+            "event": event.to_dict(),
+            "raw": _make_turn_event(**{"last-assistant-message": message}),
+            "cooldown": 1,
+        }
+        state_path.write_text(json.dumps(state), encoding="utf-8")
+
+    def test_worker_skips_when_state_file_changed(self, tmp_path, monkeypatch):
+        from vibe_notification import _debounce_worker
+
+        state_path = tmp_path / "thread.json"
+        self._write_worker_state(state_path, "First event.")
+        expected_mtime_ns = state_path.stat().st_mtime_ns
+
+        self._write_worker_state(state_path, "Newer event.")
+        os.utime(state_path, ns=(expected_mtime_ns + 1000, expected_mtime_ns + 1000))
+
+        captured = {}
+
+        class DummyNotifier:
+            def process_event(self, event):
+                captured["event"] = event
+
+        monkeypatch.setattr(_debounce_worker.time, "sleep", lambda seconds: None)
+        monkeypatch.setattr(_debounce_worker, "VibeNotifier", lambda: DummyNotifier())
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "_debounce_worker.py",
+                "--state-path", str(state_path),
+                "--cooldown", "1",
+                "--expected-mtime-ns", str(expected_mtime_ns),
+            ],
+        )
+
+        assert _debounce_worker.main() == 0
+        assert "event" not in captured
+
+    def test_worker_sends_when_state_file_is_current(self, tmp_path, monkeypatch):
+        from vibe_notification import _debounce_worker
+
+        state_path = tmp_path / "thread.json"
+        self._write_worker_state(state_path)
+        expected_mtime_ns = state_path.stat().st_mtime_ns
+        captured = {}
+
+        class DummyNotifier:
+            def process_event(self, event):
+                captured["event"] = event
+
+        monkeypatch.setattr(_debounce_worker.time, "sleep", lambda seconds: None)
+        monkeypatch.setattr(_debounce_worker, "VibeNotifier", lambda: DummyNotifier())
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "_debounce_worker.py",
+                "--state-path", str(state_path),
+                "--cooldown", "1",
+                "--expected-mtime-ns", str(expected_mtime_ns),
+            ],
+        )
+
+        assert _debounce_worker.main() == 0
+        assert captured["event"].conversation_end is True
+        assert captured["event"].is_last_turn is True
+        assert not state_path.exists()
 
 
 class TestHandleCodexTurnEvent:
