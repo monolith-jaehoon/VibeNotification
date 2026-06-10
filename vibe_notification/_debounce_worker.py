@@ -77,7 +77,9 @@ def main() -> int:
 
     # 发送完成后清理状态文件
     try:
-        state_path.unlink(missing_ok=True)
+        state_path.unlink()
+    except FileNotFoundError:
+        pass
     except OSError:
         pass
 
