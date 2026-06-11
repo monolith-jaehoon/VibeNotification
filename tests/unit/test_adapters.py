@@ -2,6 +2,8 @@
 测试平台适配器模块
 """
 
+import sys
+
 import pytest
 from unittest.mock import Mock, patch
 from vibe_notification.adapters import (
@@ -297,6 +299,7 @@ class TestMacOSAdapter:
         assert "\\\\ path" in command[2]
         assert 'subtitle "Subtitle"' in command[2]
 
+    @pytest.mark.skipif(sys.platform != "darwin", reason="macOS .app bundle detection")
     def test_detect_sender_bundle_id_from_parent_process_chain(self, mock_executor):
         adapter = MacOSAdapter(mock_executor)
 
@@ -309,7 +312,8 @@ class TestMacOSAdapter:
         defaults_result = ProcessResult(0, "com.microsoft.VSCode\n")
         mock_executor.execute.side_effect = [*parent_ps, defaults_result]
 
-        sender_bundle_id = adapter._detect_sender_bundle_id()
+        with patch("pathlib.Path.exists", return_value=True):
+            sender_bundle_id = adapter._detect_sender_bundle_id()
 
         assert sender_bundle_id == "com.microsoft.VSCode"
 
