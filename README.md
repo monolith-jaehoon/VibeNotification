@@ -403,7 +403,7 @@ Location: `~/.config/vibe-notification/config.json`
 | `enable_sound` | bool | `true` | Enable sound |
 | `enable_notification` | bool | `true` | Enable system notification |
 | `notification_timeout` | int | `10000` | Duration in ms |
-| `sound_type` | string | `"default"` | Sound type |
+| `sound_type` | string | `"Glass"` | Sound type |
 | `sound_volume` | float | `0.1` | Sound volume |
 | `log_level` | string | `"INFO"` | Log level |
 | `detect_conversation_end` | bool | `true` | Detect end of conversation |
