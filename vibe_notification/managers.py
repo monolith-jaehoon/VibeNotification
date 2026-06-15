@@ -19,6 +19,9 @@ from .exceptions import NotifierError
 from .i18n import t
 from .parsers.routing import detect_parser_type
 
+DEFAULT_NOTIFICATION_TITLE = "VibeNotification"
+HOST_CONTEXT_ENV_KEYS = ("TERM_PROGRAM",)
+
 
 class ParserManager:
     """解析器管理器"""
@@ -287,6 +290,43 @@ class NotificationBuilder:
 
         return event.agent or event.tool_name or "IDE"
 
+    def _get_agent_name(self, event: NotificationEvent) -> Optional[str]:
+        """从事件信息推断 agent 名称。"""
+        has_source = any(
+            isinstance(candidate, str) and candidate.strip()
+            for candidate in (event.agent, event.tool_name)
+        )
+        if not has_source:
+            return None
+
+        agent = self._get_ide_tool_name(event)
+        return None if agent.lower() in {"ide", "unknown", "none"} else agent
+
+    def _get_title_prefix(self, event: NotificationEvent) -> Optional[str]:
+        """优先从 IDE 环境，其次从 agent 信息推断标题前缀。"""
+        for key in HOST_CONTEXT_ENV_KEYS:
+            value = os.environ.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+        return self._get_agent_name(event)
+
+    def _build_notification_title(self, event: NotificationEvent) -> str:
+        """构建通知标题。"""
+        prefix = self._get_title_prefix(event)
+        if not prefix:
+            prefix = DEFAULT_NOTIFICATION_TITLE
+
+        return f"{prefix} - {self._get_project_name(event)}"
+
+    def _get_event_message(self, event: NotificationEvent) -> Optional[str]:
+        """从 parser 统一生成的事件字段中提取通知正文。"""
+        for value in (event.message, event.summary):
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+        return None
+
     def build_notification_content(
         self,
         event: NotificationEvent,
@@ -298,8 +338,12 @@ class NotificationBuilder:
         level = NotificationLevel.SUCCESS if event.conversation_end else NotificationLevel.INFO
 
         # 组装固定展示内容
-        title = custom_title or self._get_project_name(event)
-        message = custom_message or t("reply_finished")
+        title = custom_title or self._build_notification_title(event)
+        message = (
+            custom_message
+            or self._get_event_message(event)
+            or t("reply_finished")
+        )
         subtitle = t("subtitle_ide", tool=self._get_ide_tool_name(event))
 
         # 截断过长的消息
