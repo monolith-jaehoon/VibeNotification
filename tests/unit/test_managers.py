@@ -302,28 +302,35 @@ class TestNotifierManager:
 class TestNotificationBuilder:
     """测试通知内容构建器"""
 
-    def test_build_notification_content_conversation_end(self, sample_event):
+    def _clear_host_env(self, monkeypatch):
+        """清理宿主环境变量，避免宿主环境影响标题测试。"""
+        for key in ("TERM_PROGRAM",):
+            monkeypatch.delenv(key, raising=False)
+
+    def test_build_notification_content_conversation_end(self, sample_event, monkeypatch):
         """测试构建会话结束通知内容"""
+        self._clear_host_env(monkeypatch)
         builder = NotificationBuilder()
-        expected_title = builder._get_project_name()
+        expected_title = f"Claude Code - {builder._get_project_name(sample_event)}"
         content = builder.build_notification_content(sample_event)
 
         assert content["title"] == expected_title
-        assert content["message"] == "回复结束啦！"
+        assert content["message"] == "会话已完成"
         assert content["subtitle"] == "IDE: Claude Code"
         assert content["level"] == NotificationLevel.SUCCESS
 
-    def test_build_notification_content_operation_complete(self, sample_event):
+    def test_build_notification_content_operation_complete(self, sample_event, monkeypatch):
         """测试构建操作完成通知内容"""
+        self._clear_host_env(monkeypatch)
         # 修改事件为非会话结束
         sample_event.conversation_end = False
 
         builder = NotificationBuilder()
-        expected_title = builder._get_project_name()
+        expected_title = f"Claude Code - {builder._get_project_name(sample_event)}"
         content = builder.build_notification_content(sample_event)
 
         assert content["title"] == expected_title
-        assert content["message"] == "回复结束啦！"
+        assert content["message"] == "会话已完成"
         assert content["subtitle"] == "IDE: Claude Code"
         assert content["level"] == NotificationLevel.INFO
 
@@ -362,8 +369,59 @@ class TestNotificationBuilder:
         assert content["title"] == "Custom Title"
         assert content["message"] == "Custom Message"
 
-    def test_build_notification_content_no_summary_or_message(self):
+    def test_build_notification_content_uses_host_title_prefix(self, sample_event, monkeypatch):
+        """宿主环境标题优先于 agent 标题。"""
+        self._clear_host_env(monkeypatch)
+        monkeypatch.setenv("TERM_PROGRAM", "vscode")
+        sample_event.agent = "codex"
+        sample_event.tool_name = None
+        sample_event.metadata = {"cwd": "/tmp/workspace/demo"}
+
+        builder = NotificationBuilder()
+        content = builder.build_notification_content(sample_event)
+
+        assert content["title"] == "vscode - demo"
+        assert content["subtitle"] == "IDE: Codex"
+
+    def test_build_notification_content_uses_event_message(self, sample_event, monkeypatch):
+        """Parser 生成的事件消息应作为通知正文。"""
+        self._clear_host_env(monkeypatch)
+        sample_event.agent = "codex"
+        sample_event.message = "Done and verified."
+        sample_event.tool_name = None
+        sample_event.metadata = {"cwd": "/tmp/workspace/demo"}
+
+        builder = NotificationBuilder()
+        content = builder.build_notification_content(sample_event)
+
+        assert content["title"] == "Codex - demo"
+        assert content["message"] == "Done and verified."
+
+    def test_build_notification_content_uses_default_message_without_event_message(
+        self, monkeypatch
+    ):
+        """缺少事件消息时继续使用默认正文。"""
+        self._clear_host_env(monkeypatch)
+        event = NotificationEvent(
+            type="conversation_end",
+            agent="codex",
+            message=None,
+            summary=None,
+            timestamp="2024-01-01T12:00:00",
+            conversation_end=True,
+            is_last_turn=True,
+            metadata={"cwd": "/tmp/workspace/demo"},
+        )
+
+        builder = NotificationBuilder()
+        content = builder.build_notification_content(event)
+
+        assert content["title"] == "Codex - demo"
+        assert content["message"] == "回复结束啦！"
+
+    def test_build_notification_content_no_summary_or_message(self, monkeypatch):
         """测试构建通知内容时没有摘要或消息"""
+        self._clear_host_env(monkeypatch)
         event = NotificationEvent(
             type="conversation_end",
             agent="test-agent",
@@ -375,12 +433,34 @@ class TestNotificationBuilder:
         )
 
         builder = NotificationBuilder()
-        expected_title = builder._get_project_name()
+        expected_title = f"test-agent - {builder._get_project_name(event)}"
         content = builder.build_notification_content(event)
 
         assert content["title"] == expected_title
         assert content["message"] == "回复结束啦！"
         assert content["subtitle"] == "IDE: test-agent"
+
+    def test_build_notification_content_uses_default_prefix_without_source(self, monkeypatch):
+        """缺少 IDE 和 agent 信息时使用默认标题前缀。"""
+        self._clear_host_env(monkeypatch)
+        event = NotificationEvent(
+            type="conversation_end",
+            agent="",
+            message=None,
+            summary=None,
+            timestamp="2024-01-01T12:00:00",
+            conversation_end=True,
+            is_last_turn=True,
+            tool_name=None,
+            metadata={"cwd": "/tmp/workspace/demo"},
+        )
+
+        builder = NotificationBuilder()
+        content = builder.build_notification_content(event)
+
+        assert content["title"] == "VibeNotification - demo"
+        assert content["message"] == "回复结束啦！"
+        assert content["subtitle"] == "IDE: IDE"
 
     def test_build_error_notification(self):
         """测试构建错误通知内容"""
