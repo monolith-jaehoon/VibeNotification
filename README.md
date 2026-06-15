@@ -354,6 +354,11 @@ Edit `~/.config/vibe-notification/config.json`:
 - `30000` = 30s
 - `0` = sticky, manual close
 
+`notification_timeout` controls display duration on supported platform notifiers.
+It is currently applied to Linux `notify-send --expire-time` and the Windows
+NotifyIcon fallback. The current macOS notification backends do not expose an
+equivalent timeout setting.
+
 Or use the interactive config:
 
 ```bash
@@ -402,7 +407,7 @@ Location: `~/.config/vibe-notification/config.json`
 |-----|------|---------|-------------|
 | `enable_sound` | bool | `true` | Enable sound |
 | `enable_notification` | bool | `true` | Enable system notification |
-| `notification_timeout` | int | `10000` | Duration in ms |
+| `notification_timeout` | int | `10000` | Duration in ms for supported platform notifiers |
 | `sound_type` | string | `"default"` | Sound type |
 | `sound_volume` | float | `0.1` | Sound volume |
 | `log_level` | string | `"INFO"` | Log level |

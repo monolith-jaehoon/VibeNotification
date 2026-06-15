@@ -66,7 +66,7 @@ python -m vibe_notification --config
 | 声音通知 | 是否播放声音提示 | 启用 | 启用/禁用 |
 | 系统通知 | 是否显示系统通知 | 启用 | 启用/禁用 |
 | 日志级别 | 记录日志的详细程度 | INFO | DEBUG/INFO/WARNING/ERROR |
-| 通知超时 | 系统通知显示时间(毫秒) | 10000 | 1000-60000 |
+| 通知超时 | 支持的平台通知器显示时间(毫秒) | 10000 | 1000-60000 |
 | 声音类型 | 通知提示音类型 | Glass | Glass/Ping/Pop/Tink/Basso |
 | 声音大小 | 音量大小(0.0-1.0) | 0.1 | 0.0-1.0 |
 | macOS sender 模式 | 是否给 terminal-notifier 绑定宿主 App sender | auto | auto/off/force |

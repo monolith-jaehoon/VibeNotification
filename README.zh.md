@@ -354,6 +354,10 @@ VIBE_NOTIFICATION_SOUND_VOLUME=0.8 python -m vibe_notification --test
 - `30000`：30 秒
 - `0`：不自动消失
 
+`notification_timeout` 控制受支持平台通知器的显示时长。当前会应用到
+Linux `notify-send --expire-time` 和 Windows NotifyIcon fallback；当前 macOS
+通知后端没有等价的 timeout 设置。
+
 或使用交互式配置：
 
 ```bash
@@ -402,7 +406,7 @@ notify = ["env", "VIBE_NOTIFICATION_LOG_LEVEL=DEBUG", "python3", "-m", "vibe_not
 |----|------|--------|------|
 | `enable_sound` | 布尔 | `true` | 启用声音 |
 | `enable_notification` | 布尔 | `true` | 启用系统通知 |
-| `notification_timeout` | 整数 | `10000` | 显示时长（毫秒） |
+| `notification_timeout` | 整数 | `10000` | 受支持平台通知器的显示时长（毫秒） |
 | `sound_type` | 字符串 | `"default"` | 声音类型 |
 | `sound_volume` | 浮点 | `0.1` | 音量大小 |
 | `log_level` | 字符串 | `"INFO"` | 日志级别 |

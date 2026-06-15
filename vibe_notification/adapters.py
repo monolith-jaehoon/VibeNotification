@@ -16,6 +16,18 @@ from .utils import get_platform_info, check_command, escape_for_osascript
 
 MACOS_SOUND_TIMEOUT_SECONDS = 3.0
 MACOS_NOTIFICATION_TIMEOUT_SECONDS = 3.0
+DEFAULT_NOTIFICATION_TIMEOUT_MS = 10000
+
+
+def _notification_timeout_ms(config: Optional[NotificationConfig]) -> int:
+    """返回配置的通知超时时间（毫秒）。"""
+    if config is None:
+        return DEFAULT_NOTIFICATION_TIMEOUT_MS
+
+    try:
+        return int(getattr(config, "notification_timeout", DEFAULT_NOTIFICATION_TIMEOUT_MS))
+    except (TypeError, ValueError):
+        return DEFAULT_NOTIFICATION_TIMEOUT_MS
 
 
 class ProcessResult:
@@ -400,8 +412,9 @@ class MacOSAdapter(PlatformAdapter):
 class LinuxAdapter(PlatformAdapter):
     """Linux 平台适配器"""
 
-    def __init__(self, executor: CommandExecutor):
+    def __init__(self, executor: CommandExecutor, config: Optional[NotificationConfig] = None):
         self.executor = executor
+        self.config = config
         self.logger = logging.getLogger(__name__)
 
     def play_sound(self, sound_file: Optional[str] = None, sound_type: str = "default", volume: float = 1.0) -> None:
@@ -455,9 +468,13 @@ class LinuxAdapter(PlatformAdapter):
 
     def show_notification(self, title: str, message: str, subtitle: str = "") -> None:
         """使用 notify-send 显示通知"""
-        command = ["notify-send", title, message]
+        timeout_ms = _notification_timeout_ms(self.config)
+        command = ["notify-send"]
+        if timeout_ms >= 0:
+            command.extend(["--expire-time", str(timeout_ms)])
         if subtitle:
             command.extend(["-h", f"string:x-canonical-private-synchronous: {subtitle}"])
+        command.extend([title, message])
 
         result = self.executor.execute(command)
         if not result.success:
@@ -475,8 +492,9 @@ class LinuxAdapter(PlatformAdapter):
 class WindowsAdapter(PlatformAdapter):
     """Windows 平台适配器"""
 
-    def __init__(self, executor: CommandExecutor):
+    def __init__(self, executor: CommandExecutor, config: Optional[NotificationConfig] = None):
         self.executor = executor
+        self.config = config
         self.logger = logging.getLogger(__name__)
 
     def play_sound(self, sound_file: Optional[str] = None, sound_type: str = "default", volume: float = 1.0) -> None:
@@ -561,7 +579,7 @@ class WindowsAdapter(PlatformAdapter):
             $notification.BalloonTipTitle = "{full_title}";
             $notification.BalloonTipText = "{message}";
             $notification.Visible = $true;
-            $notification.ShowBalloonTip(10000);
+            $notification.ShowBalloonTip({_notification_timeout_ms(self.config)});
             Write-Host "NotifyIcon notification sent"
             Start-Sleep 2;
             $notification.Dispose();
@@ -607,8 +625,8 @@ def create_platform_adapter(
         return MacOSAdapter(executor, config=config)
     elif is_wsl or platform_info["system"] == "Windows":
         # WSL环境使用Windows适配器
-        return WindowsAdapter(executor)
+        return WindowsAdapter(executor, config=config)
     elif platform_info["system"] == "Linux":
-        return LinuxAdapter(executor)
+        return LinuxAdapter(executor, config=config)
     else:
         raise UnsupportedPlatformError(platform_info["system"])

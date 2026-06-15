@@ -374,7 +374,8 @@ class TestLinuxAdapter:
         args = mock_executor.execute.call_args[0][0]
         assert sound_file in " ".join(args)
 
-    def test_show_notification(self, mock_executor):
+    @patch('vibe_notification.adapters.check_command', return_value=False)
+    def test_show_notification(self, mock_check_command, mock_executor):
         """测试显示通知"""
         adapter = LinuxAdapter(mock_executor)
 
@@ -383,8 +384,23 @@ class TestLinuxAdapter:
         mock_executor.execute.assert_called_once()
         args = mock_executor.execute.call_args[0][0]
         assert "notify-send" in args
+        assert "--expire-time" in args
+        assert "10000" in args
         assert "Title" in args
         assert "Message" in args
+
+    @patch('vibe_notification.adapters.check_command', return_value=False)
+    def test_show_notification_uses_configured_timeout(self, mock_check_command, mock_executor):
+        """Linux notify-send 应使用配置的 notification_timeout。"""
+        adapter = LinuxAdapter(
+            mock_executor,
+            config=NotificationConfig(notification_timeout=5000),
+        )
+
+        adapter.show_notification("Title", "Message")
+
+        args = mock_executor.execute.call_args[0][0]
+        assert args[:3] == ["notify-send", "--expire-time", "5000"]
 
     @patch('vibe_notification.adapters.check_command')
     def test_is_sound_available_paplay(self, mock_check_command):
