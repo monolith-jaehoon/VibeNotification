@@ -76,7 +76,54 @@ def test_process_event_allows_non_terminal_event_when_detection_disabled():
     notifier.process_event(event)
 
     notifier.notification_builder.build_notification_content.assert_called_once_with(event)
-    notifier.notifier_manager.send_notifications.assert_called_once()
+    notifier.notifier_manager.send_notifications.assert_called_once_with(
+        title="Demo",
+        message="Reply finished!",
+        level="INFO",
+        subtitle="IDE: Codex",
+    )
+
+
+def test_process_event_passes_metadata_cwd_as_focus_path():
+    """Codex 事件中的 cwd 应传给系统通知点击聚焦路径。"""
+    config = NotificationConfig(
+        enable_sound=True,
+        enable_notification=True,
+        detect_conversation_end=True,
+    )
+    notifier = VibeNotifier(config)
+    notifier.notification_builder = Mock(
+        build_notification_content=Mock(
+            return_value={
+                "title": "Demo",
+                "message": "Reply finished!",
+                "level": "INFO",
+                "subtitle": "IDE: Codex",
+            }
+        )
+    )
+    notifier.notifier_manager = Mock()
+
+    event = NotificationEvent(
+        type="agent-turn-complete",
+        agent="codex",
+        message="done",
+        summary="done",
+        timestamp="2026-03-21T00:00:00",
+        conversation_end=True,
+        is_last_turn=True,
+        metadata={"cwd": " /tmp/codex workspace "},
+    )
+
+    notifier.process_event(event)
+
+    notifier.notifier_manager.send_notifications.assert_called_once_with(
+        title="Demo",
+        message="Reply finished!",
+        level="INFO",
+        subtitle="IDE: Codex",
+        focus_path="/tmp/codex workspace",
+    )
 
 
 def test_run_skips_codex_stop_hook_payload_from_stdin(monkeypatch):

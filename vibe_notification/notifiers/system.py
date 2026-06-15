@@ -34,7 +34,16 @@ class SystemNotifier(BaseNotifier):
 
         try:
             # 使用平台适配器显示通知
-            self.platform_adapter.show_notification(title, message, subtitle)
+            focus_path = kwargs.get("focus_path")
+            if focus_path is not None:
+                self.platform_adapter.show_notification(
+                    title,
+                    message,
+                    subtitle,
+                    focus_path=focus_path,
+                )
+            else:
+                self.platform_adapter.show_notification(title, message, subtitle)
         except Exception as e:
             self.logger.warning(f"显示通知失败: {e}")
             # 回退到打印

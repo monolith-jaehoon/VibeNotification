@@ -359,6 +359,15 @@ It is currently applied to Linux `notify-send --expire-time` and the Windows
 NotifyIcon fallback. The current macOS notification backends do not expose an
 equivalent timeout setting.
 
+When VibeNotification detects a VS Code integrated terminal on Linux and the
+`code` CLI is available, it waits for `notify-send --wait` to return. Closing
+before the configured timeout is treated as a click and runs `code -r` to focus
+the workspace.
+
+On macOS, VS Code click-to-focus is available through `terminal-notifier` when the
+`code` CLI is installed and sender binding is not in use. Windows toast click
+activation is not supported by the current one-shot PowerShell notifier.
+
 Or use the interactive config:
 
 ```bash

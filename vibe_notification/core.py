@@ -122,14 +122,18 @@ class VibeNotifier:
 
             # 构建通知内容
             content = self.notification_builder.build_notification_content(event)
+            focus_path = self._extract_focus_path(event)
+            notify_kwargs = {
+                "title": content["title"],
+                "message": content["message"],
+                "level": content["level"],
+                "subtitle": content["subtitle"],
+            }
+            if focus_path is not None:
+                notify_kwargs["focus_path"] = focus_path
 
             # 发送通知
-            self.notifier_manager.send_notifications(
-                title=content["title"],
-                message=content["message"],
-                level=content["level"],
-                subtitle=content["subtitle"]
-            )
+            self.notifier_manager.send_notifications(**notify_kwargs)
 
             # 记录到日志
             self.logger.info(f"已发送通知: {content['title']} - {content['message']}")
@@ -140,6 +144,20 @@ class VibeNotifier:
         except Exception as e:
             # 包装未知错误
             raise VibeNotificationError(f"处理事件失败: {e}") from e
+
+    def _extract_focus_path(self, event: NotificationEvent) -> Optional[str]:
+        """从事件元数据中提取 VS Code 聚焦路径。"""
+        metadata = event.metadata
+        if not isinstance(metadata, dict):
+            return None
+
+        cwd = metadata.get("cwd")
+        if isinstance(cwd, str):
+            cwd = cwd.strip()
+            if cwd:
+                return cwd
+
+        return None
 
     def _send_error_notification(self, error: Exception, context: str):
         """发送错误通知"""

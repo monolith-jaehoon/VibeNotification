@@ -8,15 +8,25 @@ from abc import ABC, abstractmethod
 from typing import List, Optional
 from pathlib import Path
 import os
+import shlex
 import subprocess
 import logging
+import time
 from .exceptions import CommandExecutionError, UnsupportedPlatformError
 from .models import NotificationConfig
 from .utils import get_platform_info, check_command, escape_for_osascript
 
 MACOS_SOUND_TIMEOUT_SECONDS = 3.0
 MACOS_NOTIFICATION_TIMEOUT_SECONDS = 3.0
+FOCUS_COMMAND_TIMEOUT_SECONDS = 3.0
+NOTIFY_SEND_WAIT_GRACE_SECONDS = 1.0
 DEFAULT_NOTIFICATION_TIMEOUT_MS = 10000
+VSCODE_ENV_KEYS = (
+    "VSCODE_PID",
+    "VSCODE_CWD",
+    "VSCODE_IPC_HOOK_CLI",
+    "VSCODE_GIT_IPC_HANDLE",
+)
 
 
 def _notification_timeout_ms(config: Optional[NotificationConfig]) -> int:
@@ -28,6 +38,32 @@ def _notification_timeout_ms(config: Optional[NotificationConfig]) -> int:
         return int(getattr(config, "notification_timeout", DEFAULT_NOTIFICATION_TIMEOUT_MS))
     except (TypeError, ValueError):
         return DEFAULT_NOTIFICATION_TIMEOUT_MS
+
+
+def _focus_workdir(focus_path: Optional[str] = None) -> Optional[str]:
+    """返回用于聚焦 VS Code 工作区的事件路径。"""
+    if isinstance(focus_path, str):
+        stripped = focus_path.strip()
+        if stripped:
+            return stripped
+
+    return None
+
+
+def _is_vscode_environment() -> bool:
+    """检测 VS Code 集成终端环境变量。"""
+    if os.environ.get("TERM_PROGRAM", "").strip().lower() == "vscode":
+        return True
+
+    return any(os.environ.get(name) for name in VSCODE_ENV_KEYS)
+
+
+def _resolve_vscode_cli() -> Optional[str]:
+    """解析用于聚焦当前工作区的 VS Code CLI 命令。"""
+    for command in ("code", "vscode"):
+        if check_command(command):
+            return command
+    return None
 
 
 class ProcessResult:
@@ -109,7 +145,13 @@ class PlatformAdapter(ABC):
         pass
 
     @abstractmethod
-    def show_notification(self, title: str, message: str, subtitle: str = "") -> None:
+    def show_notification(
+        self,
+        title: str,
+        message: str,
+        subtitle: str = "",
+        focus_path: Optional[str] = None,
+    ) -> None:
         """显示系统通知"""
         pass
 
@@ -281,6 +323,7 @@ class MacOSAdapter(PlatformAdapter):
         message: str,
         subtitle: str = "",
         sender_bundle_id: Optional[str] = None,
+        execute_command: Optional[str] = None,
     ) -> List[str]:
         """构建 terminal-notifier 命令。"""
         command = ["terminal-notifier", "-title", title, "-message", message]
@@ -288,6 +331,8 @@ class MacOSAdapter(PlatformAdapter):
             command.extend(["-subtitle", subtitle])
         if sender_bundle_id:
             command.extend(["-sender", sender_bundle_id])
+        if execute_command:
+            command.extend(["-execute", execute_command])
         return command
 
     def _build_osascript_command(self, title: str, message: str, subtitle: str = "") -> List[str]:
@@ -327,6 +372,27 @@ class MacOSAdapter(PlatformAdapter):
             self.logger.debug("No sender bundle id resolved with sender mode %s", mode)
         return sender_bundle_id
 
+    def _is_vscode_context(self) -> bool:
+        """检测当前通知是否来自 VS Code 宿主上下文。"""
+        if _is_vscode_environment():
+            return True
+
+        for command in self._iter_parent_commands():
+            normalized = command.strip().lower()
+            if "visual studio code.app" in normalized or "code helper" in normalized:
+                return True
+
+        return False
+
+    def _build_vscode_focus_shell_command(self, focus_path: Optional[str] = None) -> Optional[str]:
+        """构建点击通知后聚焦当前 VS Code 工作区的 shell 命令。"""
+        vscode_cli = _resolve_vscode_cli()
+        focus_workdir = _focus_workdir(focus_path)
+        if not vscode_cli or focus_workdir is None:
+            return None
+
+        return f"{shlex.quote(vscode_cli)} -r {shlex.quote(focus_workdir)}"
+
     def __init__(self, executor: CommandExecutor, config: Optional[NotificationConfig] = None):
         self.executor = executor
         self.config = config
@@ -357,20 +423,34 @@ class MacOSAdapter(PlatformAdapter):
         if not result.success:
             raise CommandExecutionError(command, result.return_code, result.stderr)
 
-    def show_notification(self, title: str, message: str, subtitle: str = "") -> None:
+    def show_notification(
+        self,
+        title: str,
+        message: str,
+        subtitle: str = "",
+        focus_path: Optional[str] = None,
+    ) -> None:
         """优先使用 terminal-notifier，回退到 osascript 显示通知。"""
         if check_command("terminal-notifier"):
             sender_bundle_id = self._resolve_sender_bundle_id()
+            execute_command = None
+            if sender_bundle_id is None and self._is_vscode_context():
+                execute_command = self._build_vscode_focus_shell_command(focus_path)
             command = self._build_terminal_notifier_command(
                 title,
                 message,
                 subtitle,
                 sender_bundle_id=sender_bundle_id,
+                execute_command=execute_command,
             )
             if sender_bundle_id:
                 self.logger.debug(
                     "Using terminal-notifier for macOS notification with sender %s",
                     sender_bundle_id,
+                )
+            elif execute_command:
+                self.logger.debug(
+                    "Using terminal-notifier for macOS notification with VS Code click action"
                 )
             else:
                 self.logger.debug("Using terminal-notifier for macOS notification without sender")
@@ -466,19 +546,64 @@ class LinuxAdapter(PlatformAdapter):
         except Exception as e:
             self.logger.warning(f"Failed to set system volume: {e}")
 
-    def show_notification(self, title: str, message: str, subtitle: str = "") -> None:
+    def show_notification(
+        self,
+        title: str,
+        message: str,
+        subtitle: str = "",
+        focus_path: Optional[str] = None,
+    ) -> None:
         """使用 notify-send 显示通知"""
         timeout_ms = _notification_timeout_ms(self.config)
+        vscode_cli = _resolve_vscode_cli()
+        focus_workdir = _focus_workdir(focus_path)
+        should_wait_for_click = (
+            timeout_ms > 0
+            and vscode_cli is not None
+            and focus_workdir is not None
+            and self._is_vscode_context()
+        )
         command = ["notify-send"]
         if timeout_ms >= 0:
             command.extend(["--expire-time", str(timeout_ms)])
+        if should_wait_for_click:
+            command.append("--wait")
         if subtitle:
             command.extend(["-h", f"string:x-canonical-private-synchronous: {subtitle}"])
         command.extend([title, message])
 
-        result = self.executor.execute(command)
+        started_at = time.monotonic()
+        try:
+            if should_wait_for_click:
+                wait_timeout = (timeout_ms / 1000.0) + NOTIFY_SEND_WAIT_GRACE_SECONDS
+                result = self.executor.execute_with_timeout(command, wait_timeout)
+            else:
+                result = self.executor.execute(command)
+        except CommandExecutionError:
+            if should_wait_for_click and self._elapsed_ms(started_at) >= timeout_ms:
+                self.logger.debug("notify-send wait reached configured timeout; treating as no click")
+                return
+            raise
+
         if not result.success:
             raise CommandExecutionError(command, result.return_code, result.stderr)
+
+        if should_wait_for_click and self._elapsed_ms(started_at) < timeout_ms:
+            self._focus_vscode_workspace(vscode_cli, focus_workdir)
+
+    def _is_vscode_context(self) -> bool:
+        """检测当前通知是否来自 VS Code 集成终端。"""
+        return _is_vscode_environment()
+
+    def _focus_vscode_workspace(self, vscode_cli: str, focus_path: str) -> None:
+        """点击通知后聚焦当前 VS Code 工作区。"""
+        command = [vscode_cli, "-r", focus_path]
+        result = self.executor.execute_with_timeout(command, FOCUS_COMMAND_TIMEOUT_SECONDS)
+        if not result.success:
+            raise CommandExecutionError(command, result.return_code, result.stderr)
+
+    def _elapsed_ms(self, started_at: float) -> float:
+        return (time.monotonic() - started_at) * 1000.0
 
     def is_sound_available(self) -> bool:
         """检查声音播放器是否可用"""
@@ -532,7 +657,13 @@ class WindowsAdapter(PlatformAdapter):
         if not result.success:
             raise CommandExecutionError(command, result.return_code, result.stderr)
 
-    def show_notification(self, title: str, message: str, subtitle: str = "") -> None:
+    def show_notification(
+        self,
+        title: str,
+        message: str,
+        subtitle: str = "",
+        focus_path: Optional[str] = None,
+    ) -> None:
         """使用 Windows Toast 通知"""
         full_title = f"{title} - {subtitle}" if subtitle else title
 
