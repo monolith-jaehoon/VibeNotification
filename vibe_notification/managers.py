@@ -95,11 +95,21 @@ class NotifierManager:
         ]
         self.logger.info(f"Initialized {len(self.notifiers)} notifiers")
 
-    def send_notifications(self, title: str, message: str, level: NotificationLevel, subtitle: str = ""):
+    def send_notifications(
+        self,
+        title: str,
+        message: str,
+        level: NotificationLevel,
+        subtitle: str = "",
+        focus_path: Optional[str] = None,
+    ):
         """发送通知到所有启用的通知器"""
         successful = 0
         failed = 0
         enabled_notifiers: List[BaseNotifier] = []
+        notify_kwargs = {"subtitle": subtitle}
+        if focus_path is not None:
+            notify_kwargs["focus_path"] = focus_path
 
         for notifier in self.notifiers:
             if notifier.is_enabled():
@@ -111,7 +121,7 @@ class NotifierManager:
         if enabled_notifiers:
             with ThreadPoolExecutor(max_workers=len(enabled_notifiers), thread_name_prefix="vibe-notify") as executor:
                 future_map = {
-                    executor.submit(notifier.notify, title, message, level, subtitle=subtitle): notifier
+                    executor.submit(notifier.notify, title, message, level, **notify_kwargs): notifier
                     for notifier in enabled_notifiers
                 }
 

@@ -14,7 +14,7 @@ from vibe_notification.managers import (
 )
 from vibe_notification.parsers import BaseParser
 from vibe_notification.parsers.codex import CodexParser
-from vibe_notification.notifiers import BaseNotifier
+from vibe_notification.notifiers import BaseNotifier, SystemNotifier
 from vibe_notification.exceptions import NotifierError
 from tests.conftest import mock_config, sample_event, mock_platform_adapter
 
@@ -138,6 +138,49 @@ class TestNotifierManager:
 
         mock_notifier.notify.assert_called_once_with(
             "Title", "Message", NotificationLevel.INFO, subtitle="Subtitle"
+        )
+
+    def test_send_notifications_with_focus_path(self, mock_config, mock_platform_adapter):
+        """事件工作目录应透传给通知器用于点击聚焦。"""
+        mock_notifier = Mock(spec=BaseNotifier)
+        mock_notifier.is_enabled.return_value = True
+
+        manager = NotifierManager(mock_config, mock_platform_adapter)
+        manager.notifiers = [mock_notifier]
+
+        manager.send_notifications(
+            "Title",
+            "Message",
+            NotificationLevel.INFO,
+            subtitle="Subtitle",
+            focus_path="/tmp/project",
+        )
+
+        mock_notifier.notify.assert_called_once_with(
+            "Title",
+            "Message",
+            NotificationLevel.INFO,
+            subtitle="Subtitle",
+            focus_path="/tmp/project",
+        )
+
+    def test_system_notifier_passes_focus_path_to_platform_adapter(self, mock_config, mock_platform_adapter):
+        """系统通知器应把点击聚焦路径传给平台适配器。"""
+        notifier = SystemNotifier(mock_config, mock_platform_adapter)
+
+        notifier.notify(
+            "Title",
+            "Message",
+            NotificationLevel.INFO,
+            subtitle="Subtitle",
+            focus_path="/tmp/project",
+        )
+
+        mock_platform_adapter.show_notification.assert_called_once_with(
+            "Title",
+            "Message",
+            "Subtitle",
+            focus_path="/tmp/project",
         )
 
     def test_send_notifications_disabled(self, mock_config, mock_platform_adapter):

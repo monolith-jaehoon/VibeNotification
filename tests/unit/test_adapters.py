@@ -299,6 +299,36 @@ class TestMacOSAdapter:
         assert "\\\\ path" in command[2]
         assert 'subtitle "Subtitle"' in command[2]
 
+    def test_show_notification_skips_vscode_click_action_without_focus_path(self, mock_executor):
+        """没有事件 cwd 时，不应注册 VS Code 点击动作。"""
+        adapter = MacOSAdapter(
+            mock_executor,
+            config=NotificationConfig(macos_sender_mode="off"),
+        )
+
+        with patch('vibe_notification.adapters.check_command', side_effect=lambda cmd: cmd in {"terminal-notifier", "code"}), \
+             patch.object(adapter, "_is_vscode_context", return_value=True):
+            adapter.show_notification("Title", "Message")
+
+        mock_executor.execute_with_timeout.assert_called_once()
+        command = mock_executor.execute_with_timeout.call_args[0][0]
+        assert "-execute" not in command
+
+    def test_show_notification_uses_focus_path_for_vscode_click_action(self, mock_executor):
+        """事件 cwd 应优先用于 VS Code 点击聚焦命令。"""
+        adapter = MacOSAdapter(
+            mock_executor,
+            config=NotificationConfig(macos_sender_mode="off"),
+        )
+
+        with patch('vibe_notification.adapters.check_command', side_effect=lambda cmd: cmd in {"terminal-notifier", "code"}), \
+             patch.object(adapter, "_is_vscode_context", return_value=True):
+            adapter.show_notification("Title", "Message", focus_path="/tmp/event project")
+
+        command = mock_executor.execute_with_timeout.call_args[0][0]
+        execute_value = command[command.index("-execute") + 1]
+        assert execute_value == "code -r '/tmp/event project'"
+
     @pytest.mark.skipif(sys.platform != "darwin", reason="macOS .app bundle detection")
     def test_detect_sender_bundle_id_from_parent_process_chain(self, mock_executor):
         adapter = MacOSAdapter(mock_executor)
@@ -378,7 +408,8 @@ class TestLinuxAdapter:
         args = mock_executor.execute.call_args[0][0]
         assert sound_file in " ".join(args)
 
-    def test_show_notification(self, mock_executor):
+    @patch('vibe_notification.adapters.check_command', return_value=False)
+    def test_show_notification(self, mock_check_command, mock_executor):
         """测试显示通知"""
         adapter = LinuxAdapter(mock_executor)
 
@@ -387,8 +418,69 @@ class TestLinuxAdapter:
         mock_executor.execute.assert_called_once()
         args = mock_executor.execute.call_args[0][0]
         assert "notify-send" in args
+        assert "--expire-time" in args
+        assert "10000" in args
         assert "Title" in args
         assert "Message" in args
+
+    @patch('vibe_notification.adapters.check_command', return_value=False)
+    def test_show_notification_uses_configured_timeout(self, mock_check_command, mock_executor):
+        """Linux notify-send 应使用配置的 notification_timeout。"""
+        adapter = LinuxAdapter(
+            mock_executor,
+            config=NotificationConfig(notification_timeout=5000),
+        )
+
+        adapter.show_notification("Title", "Message")
+
+        args = mock_executor.execute.call_args[0][0]
+        assert args[:3] == ["notify-send", "--expire-time", "5000"]
+
+    def test_show_notification_does_not_wait_for_click_without_focus_path(self, mock_executor):
+        """没有事件 cwd 时，不应等待点击或聚焦 VS Code 工作区。"""
+        adapter = LinuxAdapter(
+            mock_executor,
+            config=NotificationConfig(notification_timeout=5000),
+        )
+
+        with patch.object(adapter, "_is_vscode_context", return_value=True), \
+             patch("vibe_notification.adapters.check_command", side_effect=lambda cmd: cmd == "code"):
+            adapter.show_notification("Title", "Message")
+
+        notify_command = mock_executor.execute.call_args[0][0]
+        assert notify_command[:3] == ["notify-send", "--expire-time", "5000"]
+        assert "--wait" not in notify_command
+        mock_executor.execute_with_timeout.assert_not_called()
+
+    def test_show_notification_uses_focus_path_when_focusing_vscode(self, mock_executor):
+        """Linux 点击聚焦时应优先使用事件 cwd。"""
+        adapter = LinuxAdapter(
+            mock_executor,
+            config=NotificationConfig(notification_timeout=5000),
+        )
+
+        with patch.object(adapter, "_is_vscode_context", return_value=True), \
+             patch("vibe_notification.adapters.check_command", side_effect=lambda cmd: cmd == "code"), \
+             patch("vibe_notification.adapters.time.monotonic", side_effect=[0.0, 1.0]):
+            adapter.show_notification("Title", "Message", focus_path="/tmp/event project")
+
+        focus_command, focus_timeout = mock_executor.execute_with_timeout.call_args_list[1][0]
+        assert focus_command == ["code", "-r", "/tmp/event project"]
+        assert focus_timeout == 3.0
+
+    def test_show_notification_does_not_focus_vscode_when_wait_reaches_timeout(self, mock_executor):
+        """notify-send 执行时间达到配置超时时，不视为点击。"""
+        adapter = LinuxAdapter(
+            mock_executor,
+            config=NotificationConfig(notification_timeout=5000),
+        )
+
+        with patch.object(adapter, "_is_vscode_context", return_value=True), \
+             patch("vibe_notification.adapters.check_command", side_effect=lambda cmd: cmd == "code"), \
+             patch("vibe_notification.adapters.time.monotonic", side_effect=[0.0, 5.0]):
+            adapter.show_notification("Title", "Message", focus_path="/tmp/project")
+
+        mock_executor.execute_with_timeout.assert_called_once()
 
     @patch('vibe_notification.adapters.check_command')
     def test_is_sound_available_paplay(self, mock_check_command):
