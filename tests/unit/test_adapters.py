@@ -299,6 +299,24 @@ class TestMacOSAdapter:
         assert "\\\\ path" in command[2]
         assert 'subtitle "Subtitle"' in command[2]
 
+    def test_show_notification_adds_vscode_click_action_without_sender(self, mock_executor):
+        """VS Code 场景且未绑定 sender 时，点击通知应聚焦当前工作区。"""
+        adapter = MacOSAdapter(
+            mock_executor,
+            config=NotificationConfig(macos_sender_mode="off"),
+        )
+
+        with patch('vibe_notification.adapters.check_command', side_effect=lambda cmd: cmd in {"terminal-notifier", "code"}), \
+             patch.object(adapter, "_is_vscode_context", return_value=True), \
+             patch("vibe_notification.adapters._current_workdir", return_value="/tmp/demo project"):
+            adapter.show_notification("Title", "Message")
+
+        mock_executor.execute_with_timeout.assert_called_once()
+        command = mock_executor.execute_with_timeout.call_args[0][0]
+        assert "-execute" in command
+        execute_value = command[command.index("-execute") + 1]
+        assert execute_value == "code -r '/tmp/demo project'"
+
     @pytest.mark.skipif(sys.platform != "darwin", reason="macOS .app bundle detection")
     def test_detect_sender_bundle_id_from_parent_process_chain(self, mock_executor):
         adapter = MacOSAdapter(mock_executor)
@@ -378,7 +396,8 @@ class TestLinuxAdapter:
         args = mock_executor.execute.call_args[0][0]
         assert sound_file in " ".join(args)
 
-    def test_show_notification(self, mock_executor):
+    @patch('vibe_notification.adapters.check_command', return_value=False)
+    def test_show_notification(self, mock_check_command, mock_executor):
         """测试显示通知"""
         adapter = LinuxAdapter(mock_executor)
 
@@ -387,8 +406,58 @@ class TestLinuxAdapter:
         mock_executor.execute.assert_called_once()
         args = mock_executor.execute.call_args[0][0]
         assert "notify-send" in args
+        assert "--expire-time" in args
+        assert "10000" in args
         assert "Title" in args
         assert "Message" in args
+
+    @patch('vibe_notification.adapters.check_command', return_value=False)
+    def test_show_notification_uses_configured_timeout(self, mock_check_command, mock_executor):
+        """Linux notify-send 应使用配置的 notification_timeout。"""
+        adapter = LinuxAdapter(
+            mock_executor,
+            config=NotificationConfig(notification_timeout=5000),
+        )
+
+        adapter.show_notification("Title", "Message")
+
+        args = mock_executor.execute.call_args[0][0]
+        assert args[:3] == ["notify-send", "--expire-time", "5000"]
+
+    def test_show_notification_focuses_vscode_when_wait_returns_before_timeout(self, mock_executor):
+        """notify-send 在超时前返回时，视为点击并聚焦 VS Code 工作区。"""
+        adapter = LinuxAdapter(
+            mock_executor,
+            config=NotificationConfig(notification_timeout=5000),
+        )
+
+        with patch.object(adapter, "_is_vscode_context", return_value=True), \
+             patch("vibe_notification.adapters.check_command", side_effect=lambda cmd: cmd == "code"), \
+             patch("vibe_notification.adapters._current_workdir", return_value="/tmp/project"), \
+             patch("vibe_notification.adapters.time.monotonic", side_effect=[0.0, 1.0]):
+            adapter.show_notification("Title", "Message")
+
+        notify_command, notify_timeout = mock_executor.execute_with_timeout.call_args_list[0][0]
+        assert notify_command[:4] == ["notify-send", "--expire-time", "5000", "--wait"]
+        assert notify_timeout == 6.0
+
+        focus_command, focus_timeout = mock_executor.execute_with_timeout.call_args_list[1][0]
+        assert focus_command == ["code", "-r", "/tmp/project"]
+        assert focus_timeout == 3.0
+
+    def test_show_notification_does_not_focus_vscode_when_wait_reaches_timeout(self, mock_executor):
+        """notify-send 执行时间达到配置超时时，不视为点击。"""
+        adapter = LinuxAdapter(
+            mock_executor,
+            config=NotificationConfig(notification_timeout=5000),
+        )
+
+        with patch.object(adapter, "_is_vscode_context", return_value=True), \
+             patch("vibe_notification.adapters.check_command", side_effect=lambda cmd: cmd == "code"), \
+             patch("vibe_notification.adapters.time.monotonic", side_effect=[0.0, 5.0]):
+            adapter.show_notification("Title", "Message")
+
+        mock_executor.execute_with_timeout.assert_called_once()
 
     @patch('vibe_notification.adapters.check_command')
     def test_is_sound_available_paplay(self, mock_check_command):

@@ -354,6 +354,18 @@ VIBE_NOTIFICATION_SOUND_VOLUME=0.8 python -m vibe_notification --test
 - `30000`：30 秒
 - `0`：不自动消失
 
+`notification_timeout` 控制受支持平台通知器的显示时长。当前会应用到
+Linux `notify-send --expire-time` 和 Windows NotifyIcon fallback；当前 macOS
+通知后端没有等价的 timeout 设置。
+
+当 VibeNotification 在 Linux 上检测到 VS Code 集成终端且 `code` CLI 可用时，
+会等待 `notify-send --wait` 返回；如果关闭时间早于配置的超时时间，则视为点击
+通知，并执行 `code -r <当前工作目录>` 聚焦工作区。
+
+macOS 在安装 `terminal-notifier`、安装 `code` CLI 且未绑定 sender 时支持
+VS Code 点击聚焦。当前的一次性 PowerShell Windows 通知器不支持 toast 点击
+activation。
+
 或使用交互式配置：
 
 ```bash
@@ -402,7 +414,7 @@ notify = ["env", "VIBE_NOTIFICATION_LOG_LEVEL=DEBUG", "python3", "-m", "vibe_not
 |----|------|--------|------|
 | `enable_sound` | 布尔 | `true` | 启用声音 |
 | `enable_notification` | 布尔 | `true` | 启用系统通知 |
-| `notification_timeout` | 整数 | `10000` | 显示时长（毫秒） |
+| `notification_timeout` | 整数 | `10000` | 受支持平台通知器的显示时长（毫秒） |
 | `sound_type` | 字符串 | `"Glass"` | 声音类型 |
 | `sound_volume` | 浮点 | `0.1` | 音量大小 |
 | `log_level` | 字符串 | `"INFO"` | 日志级别 |
